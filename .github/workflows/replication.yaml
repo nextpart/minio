@@ -3,9 +3,7 @@ name: Multi-site replication tests
 on:
   pull_request:
     branches:
-      - master
-    types: [opened, synchronize, reopened, ready_for_review]
-
+    - master
 
 # This ensures that previous jobs for the PR are canceled when the PR is
 # updated.
@@ -15,7 +13,6 @@ concurrency:
 
 jobs:
   replication-test:
-    if: github.event.pull_request.draft == false
     name: Replication Tests with Go ${{ matrix.go-version }}
     runs-on: ubuntu-latest
 
@@ -40,5 +37,4 @@ jobs:
         run: |
           sudo sysctl net.ipv6.conf.all.disable_ipv6=0
           sudo sysctl net.ipv6.conf.default.disable_ipv6=0
-          go install -v github.com/minio/mc@latest
           make test-replication

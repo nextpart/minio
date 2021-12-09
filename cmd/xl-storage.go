@@ -271,10 +271,23 @@ func newXLStorage(ep Endpoint) (*xlStorage, error) {
 	filePath := pathJoin(p.diskPath, minioMetaTmpBucket, tmpFile)
 	w, err := OpenFileDirectIO(filePath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0666)
 	if err != nil {
+		switch {
+		case isSysErrInvalidArg(err):
+			return p, errUnsupportedDisk
+		case osIsPermission(err):
+			return p, errDiskAccessDenied
+		case isSysErrIO(err):
+			return p, errFaultyDisk
+		case isSysErrNotDir(err):
+			return p, errDiskNotDir
+		}
 		return p, err
 	}
 	if _, err = w.Write(alignedBuf); err != nil {
 		w.Close()
+		if isSysErrInvalidArg(err) {
+			return p, errUnsupportedDisk
+		}
 		return p, err
 	}
 	w.Close()
@@ -954,11 +967,11 @@ func (s *xlStorage) DeleteVersion(ctx context.Context, volume, path string, fi F
 		if err != errFileNotFound {
 			return err
 		}
+		metaDataPoolPut(buf) // Never used, return it
 		if fi.Deleted && forceDelMarker {
 			// Create a new xl.meta with a delete marker in it
 			return s.WriteMetadata(ctx, volume, path, fi)
 		}
-		metaDataPoolPut(buf) // Never used, return it
 
 		buf, err = s.ReadAll(ctx, volume, pathJoin(path, xlStorageFormatFileV1))
 		if err != nil {
@@ -1016,6 +1029,7 @@ func (s *xlStorage) DeleteVersion(ctx context.Context, volume, path string, fi F
 			}
 		}
 	}
+
 	if !lastVersion {
 		buf, err = xlMeta.AppendTo(metaDataPoolGet())
 		defer metaDataPoolPut(buf)
@@ -2057,6 +2071,7 @@ func (s *xlStorage) RenameData(ctx context.Context, srcVolume, srcPath string, f
 				logger.LogIf(ctx, err)
 				// Data appears corrupt. Drop data.
 			} else {
+				xlMetaLegacy.DataDir = legacyDataDir
 				if err = xlMeta.AddLegacy(xlMetaLegacy); err != nil {
 					logger.LogIf(ctx, err)
 				}

@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -338,12 +339,14 @@ func (sys *IAMSys) Init(ctx context.Context, objAPI ObjectLayer, etcdClient *etc
 
 // Prints IAM role ARNs.
 func (sys *IAMSys) printIAMRoles() {
-	arns := sys.GetRoleARNs()
-
-	if len(arns) == 0 {
+	if len(sys.rolesMap) == 0 {
 		return
 	}
-
+	var arns []string
+	for arn := range sys.rolesMap {
+		arns = append(arns, arn.String())
+	}
+	sort.Strings(arns)
 	msgs := make([]string, 0, len(arns))
 	for _, arn := range arns {
 		msgs = append(msgs, color.Bold(arn))
@@ -430,13 +433,9 @@ func (sys *IAMSys) loadWatchedEvent(ctx context.Context, event iamWatchEvent) (e
 	return err
 }
 
-// GetRoleARNs - returns a list of enabled role ARNs.
-func (sys *IAMSys) GetRoleARNs() []string {
-	var res []string
-	for arn := range sys.rolesMap {
-		res = append(res, arn.String())
-	}
-	return res
+// HasRolePolicy - returns if a role policy is configured for IAM.
+func (sys *IAMSys) HasRolePolicy() bool {
+	return len(sys.rolesMap) > 0
 }
 
 // GetRolePolicy - returns policies associated with a role ARN.
@@ -793,8 +792,20 @@ func (sys *IAMSys) ListServiceAccounts(ctx context.Context, accessKey string) ([
 	return sys.store.ListServiceAccounts(ctx, accessKey)
 }
 
-// GetServiceAccount - gets information about a service account
+// GetServiceAccount - wrapper method to get information about a service account
 func (sys *IAMSys) GetServiceAccount(ctx context.Context, accessKey string) (auth.Credentials, *iampolicy.Policy, error) {
+	sa, embeddedPolicy, err := sys.getServiceAccount(ctx, accessKey)
+	if err != nil {
+		return sa, embeddedPolicy, err
+	}
+	// Hide secret & session keys
+	sa.SecretKey = ""
+	sa.SessionToken = ""
+	return sa, embeddedPolicy, nil
+}
+
+// getServiceAccount - gets information about a service account
+func (sys *IAMSys) getServiceAccount(ctx context.Context, accessKey string) (auth.Credentials, *iampolicy.Policy, error) {
 	if !sys.Initialized() {
 		return auth.Credentials{}, nil, errServerNotInitialized
 	}
@@ -821,10 +832,6 @@ func (sys *IAMSys) GetServiceAccount(ctx context.Context, accessKey string) (aut
 			}
 		}
 	}
-
-	// Hide secret & session keys
-	sa.SecretKey = ""
-	sa.SessionToken = ""
 
 	return sa, embeddedPolicy, nil
 }

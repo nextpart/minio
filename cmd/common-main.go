@@ -34,6 +34,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	fcolor "github.com/fatih/color"
@@ -191,6 +192,9 @@ func minioConfigToConsoleFeatures() {
 	os.Setenv("CONSOLE_CERT_PASSWD", env.Get("MINIO_CERT_PASSWD", ""))
 	if globalSubnetConfig.License != "" {
 		os.Setenv("CONSOLE_SUBNET_LICENSE", globalSubnetConfig.License)
+	}
+	if globalSubnetConfig.APIKey != "" {
+		os.Setenv("CONSOLE_SUBNET_API_KEY", globalSubnetConfig.APIKey)
 	}
 }
 
@@ -718,6 +722,10 @@ func getTLSConfig() (x509Certs []*x509.Certificate, manager *certs.Manager, secu
 		}
 	}
 	secureConn = true
+
+	// syscall.SIGHUP to reload the certs.
+	manager.ReloadOnSignal(syscall.SIGHUP)
+
 	return x509Certs, manager, secureConn, nil
 }
 

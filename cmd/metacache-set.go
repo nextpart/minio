@@ -156,7 +156,7 @@ func (o *listPathOptions) gatherResults(ctx context.Context, in <-chan metaCache
 				resCh = nil
 				continue
 			}
-			if !o.IncludeDirectories && entry.isDir() {
+			if !o.IncludeDirectories && (entry.isDir() || (entry.isObjectDir() && entry.isLatestDeletemarker())) {
 				continue
 			}
 			if o.Marker != "" && entry.name < o.Marker {
@@ -168,7 +168,7 @@ func (o *listPathOptions) gatherResults(ctx context.Context, in <-chan metaCache
 			if !o.Recursive && !entry.isInDir(o.Prefix, o.Separator) {
 				continue
 			}
-			if !o.InclDeleted && entry.isObject() && entry.isLatestDeletemarker() {
+			if !o.InclDeleted && entry.isObject() && entry.isLatestDeletemarker() && !entry.isObjectDir() {
 				continue
 			}
 			if o.Limit > 0 && results.len() >= o.Limit {
@@ -324,13 +324,13 @@ func (r *metacacheReader) filter(o listPathOptions) (entries metaCacheEntriesSor
 				pastPrefix = true
 				return false
 			}
-			if !o.IncludeDirectories && entry.isDir() {
+			if !o.IncludeDirectories && (entry.isDir() || (entry.isObjectDir() && entry.isLatestDeletemarker())) {
 				return true
 			}
 			if !entry.isInDir(o.Prefix, o.Separator) {
 				return true
 			}
-			if !o.InclDeleted && entry.isObject() && entry.isLatestDeletemarker() {
+			if !o.InclDeleted && entry.isObject() && entry.isLatestDeletemarker() && !entry.isObjectDir() {
 				return entries.len() < o.Limit
 			}
 			entries.o = append(entries.o, entry)
@@ -764,7 +764,7 @@ type listPathRawOptions struct {
 	// agreed is called if all disks agreed.
 	agreed func(entry metaCacheEntry)
 
-	// partial will be returned when there is disagreement between disks.
+	// partial will be called when there is disagreement between disks.
 	// if disk did not return any result, but also haven't errored
 	// the entry will be empty and errs will
 	partial func(entries metaCacheEntries, nAgreed int, errs []error)
@@ -905,7 +905,7 @@ func listPathRaw(ctx context.Context, opts listPathRawOptions) (err error) {
 				continue
 			}
 			// If exact match, we agree.
-			if current.matches(&entry, opts.bucket) {
+			if _, ok := current.matches(&entry, true); ok {
 				topEntries[i] = entry
 				agree++
 				continue
